@@ -1,0 +1,26 @@
+{
+  "_comment": "Minimal ENCODE ATAC-seq pipeline input for caper (paired-end FASTQ).",
+  "atac": {
+    "title": "example_atac_hg38_rep1",
+    "description": "Fictional paired-end ATAC-seq test input for local pipeline dry-run.",
+    "genome_tsv": "https://storage.googleapis.com/encode-pipeline-genome-data/genome_tsv/v4/hg38.tsv",
+    "paired_end": true,
+    "fastqs_rep1_R1": [
+      "/data/atac_fastq/ENCODE_EXAMPLE_REP1_R1.fastq.gz"
+    ],
+    "fastqs_rep1_R2": [
+      "/data/atac_fastq/ENCODE_EXAMPLE_REP1_R2.fastq.gz"
+    ],
+    "enable_idr": false,
+    "nthreads": 16,
+    "_field_docs": {
+      "title": "Run label shown in metadata and output folder naming.",
+      "genome_tsv": "ENCODE genome resource table URL; must match target assembly.",
+      "paired_end": "Set true for paired-end reads (R1/R2 arrays required).",
+      "fastqs_rep1_R1": "Array of replicate 1 R1 FASTQ paths.",
+      "fastqs_rep1_R2": "Array of replicate 1 R2 FASTQ paths.",
+      "enable_idr": "Set true when >=2 biological replicates are provided.",
+      "nthreads": "Maximum threads requested by workflow tasks."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# nf-core/atacseq samplesheet example (fictional paths)
+sample,fastq_1,fastq_2,replicate
+LIV_ATAC_001,/data/atac_fastq/LIV_ATAC_001_R1.fastq.gz,/data/atac_fastq/LIV_ATAC_001_R2.fastq.gz,1
+LIV_ATAC_002,/data/atac_fastq/LIV_ATAC_002_L001_R1.fastq.gz,/data/atac_fastq/LIV_ATAC_002_L001_R2.fastq.gz,1
+LIV_ATAC_002,/data/atac_fastq/LIV_ATAC_002_L002_R1.fastq.gz,/data/atac_fastq/LIV_ATAC_002_L002_R2.fastq.gz,1
+LIV_ATAC_003,/data/atac_fastq/LIV_ATAC_003_R1.fastq.gz,/data/atac_fastq/LIV_ATAC_003_R2.fastq.gz,1

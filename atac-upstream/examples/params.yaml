@@ -1,0 +1,42 @@
+# Custom Nextflow params for nf-core/atacseq
+# Run with: nextflow run nf-core/atacseq -profile conda -params-file examples/params.yaml
+
+# --- Required inputs ---
+input: "/data/atac_fastq/samplesheet.csv"     # Path to nf-core/atacseq samplesheet CSV
+outdir: "results/atacseq"                      # Output directory for pipeline artifacts
+genome: "GRCh38"                               # iGenomes key (example: GRCh38, GRCm39)
+
+# --- Baseline execution options ---
+max_cpus: 16                                    # Upper CPU cap available to tasks
+max_memory: "64.GB"                            # Upper memory cap available to tasks
+max_time: "48.h"                               # Upper runtime cap available to tasks
+email: ""                                      # Optional completion email; keep empty to disable
+plaintext_email: true                           # Send plain text email if email is set
+monochrome_logs: false                          # Keep colorized logs for readability
+
+# --- Read preprocessing defaults ---
+trim_fastq: true                                # Run Trim Galore preprocessing
+save_trimmed: false                             # Save trimmed FASTQ files
+save_reference: false                           # Save built reference indices in results
+
+# --- Alignment / filtering defaults ---
+min_reps_consensus: 1                           # Minimum replicates needed for consensus outputs
+skip_multiqc: false                             # Include MultiQC summary report
+skip_fastqc: false                              # Include FastQC at read-level QC
+
+# --- Peak calling defaults ---
+min_peak_count: 10000                           # Lower bound for accepted peak sets
+
+# --- Optional / advanced toggles (commented examples) ---
+# aligner: "bwa"                               # Example aligner switch (if supported by version)
+# skip_peak_calling: false                       # Skip peak calling stage
+# skip_consensus_peaks: false                    # Skip consensus peak generation
+# narrow_peak: true                              # Prefer narrow peak mode
+# broad_cutoff: 0.1                              # Broad peak significance cutoff
+# macs_gsize: "hs"                              # MACS2 genome size shortcut (hs, mm, etc.)
+
+# --- Custom genome / annotation configuration (commented) ---
+# fasta: "/refs/hg38/GRCh38.primary_assembly.genome.fa"
+# gtf: "/refs/hg38/gencode.v44.annotation.gtf"
+# black_list: "/refs/hg38/ENCFF356LFX.bed.gz"
+# chrom_sizes: "/refs/hg38/hg38.chrom.sizes"
