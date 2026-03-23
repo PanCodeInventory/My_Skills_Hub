@@ -1,529 +1,241 @@
 ---
 name: r-visualization
-description: R-based single-cell and spatial data visualization using scplotter. Use for creating publication-quality plots for scRNA-seq, scTCR-seq, scBCR-seq, and spatial transcriptomics data. Supports Seurat, Giotto, and anndata formats with LLM-assisted plot generation.
-license: GPL-3.0 license
-metadata:
-    skill-author: K-Dense Inc.
-    source: https://github.com/pwwang/scplotter
+description: This skill should be used when the user asks to "visualize single-cell data", "create UMAP plot", "make dotplot", "generate publication-quality figures for scRNA-seq", "plot single-cell RNA-seq data", "create composition plots", "make feature expression plots", "visualize spatial transcriptomics", "plot TCR/BCR repertoire", or "create single-cell figures". Provides a config-driven R pipeline (BasicViz) for standard scRNA-seq plots and scplotter for specialized analyses (TCR/BCR, spatial, cell-cell communication).
 ---
 
-# R Visualization with scplotter
+# R Visualization for Single-Cell Data
 
 ## Overview
 
-scplotter is an R package built upon [`plotthis`](https://github.com/pwwang/plotthis) that provides a comprehensive set of functions to visualize single-cell sequencing and spatial data. Use this skill when working with:
+Two complementary approaches for single-cell data visualization in R:
 
-- scRNA-seq data (dimensionality reduction, clustering, marker genes)
-- scTCR-seq/scBCR-seq data (clonal analysis, repertoire diversity)
-- Spatial transcriptomics data (Visium, Xenium, SlideSeq, CODEX, etc.)
-- Cell-cell communication analysis
-- LLM-assisted plot generation
+1. **BasicViz Pipeline** — Config-driven R pipeline for standard scRNA-seq plots. Reads `.h5ad` directly via reticulate. Generate all plots from a single `config.yaml`. Covers: UMAP, composition, dotplot, feature expression, river/alluvial.
 
-## When to Use This Skill
+2. **scplotter** — R package for specialized analyses not covered by BasicViz: TCR/BCR repertoire, spatial transcriptomics, cell-cell communication, LLM-assisted generation. See `references/scplotter-api.md`.
 
-This skill should be used when:
-- Creating publication-quality visualizations for single-cell RNA-seq data
-- Analyzing TCR/BCR repertoire sequencing data
-- Visualizing spatial transcriptomics from 10x Visium, Xenium, Nanostring CosMx, etc.
-- Generating cell-cell communication plots from CellPhoneDB/LIANA results
-- Working with Seurat or Giotto objects
-- Loading and visualizing anndata (.h5ad) files in R
-- Using LLM assistance to generate visualization code automatically
+## Decision Guide: BasicViz vs scplotter
 
-## Installation
+| Plot Type | Approach | Input Format |
+|-----------|----------|-------------|
+| UMAP (embedding) | **BasicViz** | .h5ad |
+| Stacked bar composition | **BasicViz** | .h5ad |
+| Marker dotplot | **BasicViz** | .h5ad |
+| Feature expression on UMAP | **BasicViz** | .h5ad |
+| Alluvial / river plot | **BasicViz** | .h5ad |
+| TCR/BCR repertoire | scplotter | Seurat + scRepertoire |
+| Spatial transcriptomics | scplotter | Seurat / Giotto |
+| Cell-cell communication | scplotter | CellPhoneDB / LIANA |
+| RNA velocity | scplotter | Seurat |
+| Enrichment / GSEA | scplotter | Result objects |
 
-```r
-# From GitHub
-remotes::install_github("pwwang/scplotter")
-# or
-devtools::install_github("pwwang/scplotter")
+**Default rule**: Use BasicViz for any `.h5ad`-based scRNA-seq visualization. Fall back to scplotter for specialized data types or Seurat/Giotto workflows.
 
-# Using conda
-# conda install pwwang::r-scplotter
+## BasicViz Pipeline Workflow
 
-# Load the package
-library(scplotter)
+### Step 1: Inspect the Data
+
+Before generating configuration, inspect the `.h5ad` file to identify available metadata columns and genes:
+
+```python
+import anndata as ad
+adata = ad.read_h5ad("data.h5ad")
+print("obs columns:", list(adata.obs.columns))
+print("Unique clusters:", adata.obs["cell_type_col"].unique().tolist())
+print("Has UMAP:", "X_umap" in adata.obsm)
+print("Genes sample:", adata.var_names[:10].tolist())
 ```
 
-## Quick Start Templates
+Extract three key pieces of information:
+- **Cluster / cell type column** (e.g., `cell_type`, `leiden`, `cluster_annot`)
+- **Comparison / grouping column** (e.g., `timepoint`, `condition`, `sample`)
+- **Available marker genes** (from `adata.var_names`)
 
-### Template 1: scRNA-seq Visualization
+### Step 2: Generate config.yaml
 
-```r
-library(scplotter)
-library(Seurat)
+Create configuration based on data inspection. Copy the template from `assets/config_template.yaml` and customize:
 
-# Load data (example with Seurat object)
-data(ifnb_sub)  # Built-in dataset
+```yaml
+input_h5ad: "path/to/data.h5ad"
+output_dir: "results"
 
-# Dimensionality reduction plot (UMAP/t-SNE)
-CellDimPlot(ifnb_sub, reduction = "umap", group.by = "cell_type")
+plots:
+  - name: "umap_clusters"
+    type: "umap"
+    color_by: "cell_type"
+    title: "Cell Clusters"
+    palette: "elegant"
+    point_size: 0.5
 
-# Cell statistics plot
-CellStatPlot(ifnb_sub, group.by = "cell_type", 
-             metrics = c("nFeature_RNA", "nCount_RNA", "percent.mt"))
+  - name: "composition"
+    type: "proportion"
+    group_by: "timepoint"
+    fill_by: "cell_type"
+    position: "fill"
+    title: "Composition"
 
-# Feature expression on embedding
-FeatureStatPlot(ifnb_sub, features = c("CD3D", "CD14", "MS4A1"),
-                plot_type = "violin")
+  - name: "markers"
+    type: "dotplot"
+    group_by: "cell_type"
+    title: "Marker Expression"
 
-# Marker genes visualization (volcano plot)
-MarkersPlot(marker_results, top_n = 20)
+  - name: "features"
+    type: "feature"
+    title: "Marker Features"
 
-# GSEA results
-GSEASummaryPlot(gsea_results)
-GSEAPlot(gsea_results, term = "INTERFERON_ALPHA_RESPONSE")
+  - name: "river"
+    type: "river"
+    group_by: "timepoint"
+    fill_by: "cell_type"
+    title: "Composition Changes"
+
+dotplot:
+  markers:
+    B cells:
+      - Cd79a
+      - Cd79b
+      - Ms4a1
+    T cells:
+      - Cd3e
+      - Cd4
 ```
 
-### Template 2: TCR/BCR Repertoire Analysis
+**Critical validation rules**:
+- `color_by`, `group_by`, `fill_by` must reference valid `adata.obs` columns
+- `dotplot.markers` keys must EXACTLY match unique values in the `group_by` column (case-sensitive, whitespace-sensitive)
+- Gene names must exist in `adata.var_names` (case-sensitive)
+- `adata.obsm["X_umap"]` must exist for UMAP and feature plots
 
-```r
-library(scplotter)
-library(scRepertoire)
+### Step 3: Set Up Environment
 
-# Load TCR/BCR data
-data(tcr_data)  # Your tcr object
+```bash
+# Option A: Automated setup (recommended)
+bash scripts/setup_env.sh
+export RETICULATE_PYTHON=$(conda run -n basicviz which python)
 
-# Clonal volume distribution
-ClonalVolumePlot(tcr_data, group.by = "sample")
-
-# Clonal abundance
-ClonalAbundancePlot(tcr_data, top_n = 20)
-
-# Clonal residency across tissues
-ClonalResidencyPlot(tcr_data, group.by = "tissue")
-
-# Clonal composition
-ClonalCompositionPlot(tcr_data, group.by = "cell_type")
-
-# Clonal overlap between samples
-ClonalOverlapPlot(tcr_data, samples = c("sample1", "sample2"))
-
-# V/J gene usage
-ClonalGeneUsagePlot(tcr_data, gene_type = "v")
-
-# Clonal diversity analysis
-ClonalDiversityPlot(tcr_data, group.by = "condition")
-
-# CDR3 length distribution
-ClonalLengthPlot(tcr_data, chain = "TRA")
-
-# Rarefaction curve
-ClonalRarefactionPlot(tcr_data)
-
-# K-mer analysis
-ClonalKmerPlot(tcr_data, k = 3)
-
-# Positional analysis
-ClonalPositionalPlot(tcr_data)
+# Option B: Manual — verify R packages installed
+# Required: ggplot2, dplyr, tidyr, tibble, anndata, yaml, ggsci,
+#           RColorBrewer, scales, cowplot, ggalluvial, reticulate
+# Python constraint: 3.8–3.10 with numpy <2.0
 ```
 
-### Template 3: Spatial Transcriptomics
+The `setup_env.sh` script creates a conda environment with Python 3.8 and numpy <1.25, which avoids the common reticulate/numpy compatibility issue.
 
-```r
-library(scplotter)
-library(Giotto)  # or Seurat
+### Step 4: Run Pipeline
 
-# Load spatial data (Giotto object)
-data(spatial_obj)
-
-# Spatial dimension reduction plot
-SpatDimPlot(spatial_obj, reduction = "umap", group.by = "cell_type")
-
-# Spatial feature expression
-SpatFeaturePlot(spatial_obj, features = c("Gene1", "Gene2"),
-                plot_type = "heatmap")
-
-# For Seurat spatial objects
-CellDimPlot(seurat_spatial, reduction = "spatial", group.by = "cluster")
+```bash
+Rscript scripts/main.R
 ```
 
-### Template 4: Cell-Cell Communication
-
-```r
-library(scplotter)
-library(LIANA)
-
-# Load CellPhoneDB/LIANA results
-data(cellphonedb_res)
-
-# Dot plot of interactions
-CCCPlot(cellphonedb_res, plot_type = "dot",
-        top_n = 20, group.by = "cell_type")
-
-# Heatmap of interactions
-CCCPlot(cellphonedb_res, plot_type = "heatmap",
-        ligand_target = "CD40", receptor_target = "CD40LG")
-
-# Circle plot
-CCCPlot(cellphonedb_res, plot_type = "circle")
-```
-
-## Core Visualization Functions
-
-### scRNA-seq Functions
-
-| Function | Description | Use Case |
-|----------|-------------|----------|
-| `CellDimPlot()` | Dimensionality reduction plot | UMAP/t-SNE/PCA visualization |
-| `CellStatPlot()` | Cell statistics plot | QC metrics distribution |
-| `CellVelocityPlot()` | RNA velocity plot | Trajectory/directionality |
-| `FeatureStatPlot()` | Feature statistic plot | Gene expression violin/box plots |
-| `ClustreePlot()` | Clustering tree | Compare clustering resolutions |
-| `EnrichmentPlot()` | Enrichment analysis plot | GO/KEGG enrichment |
-| `MarkersPlot()` | Marker gene visualization | Volcano plots for DEGs |
-| `GSEASummaryPlot()` | GSEA summary | Enrichment map/dotplot |
-| `GSEAPlot()` | GSEA enrichment plot | Running enrichment score |
-| `CCCPlot()` | Cell-cell communication | Ligand-receptor interactions |
-
-### scTCR-seq/scBCR-seq Functions
-
-| Function | Description | Use Case |
-|----------|-------------|----------|
-| `ClonalVolumePlot()` | Clonal volume | Clone size distribution |
-| `ClonalAbundancePlot()` | Clonal abundance | Top clones by frequency |
-| `ClonalLengthPlot()` | CDR3 length | CDR3 length distribution |
-| `ClonalResidencyPlot()` | Clonal residency | Tissue residency patterns |
-| `ClonalCompositionPlot()` | Clonal composition | Clone makeup by group |
-| `ClonalOverlapPlot()` | Clonal overlap | Shared clones between samples |
-| `ClonalStatPlot()` | Clonal statistics | Summary statistics |
-| `ClonalDiversityPlot()` | Clonal diversity | Diversity indices |
-| `ClonalGeneUsagePlot()` | V/J gene usage | V(D)J gene frequency |
-| `ClonalPositionalPlot()` | Positional analysis | CDR3 positional patterns |
-| `ClonalKmerPlot()` | K-mer analysis | Motif enrichment |
-| `ClonalRarefactionPlot()` | Rarefaction curve | Sampling depth assessment |
-
-### Spatial Data Functions
-
-| Function | Description | Use Case |
-|----------|-------------|----------|
-| `SpatDimPlot()` | Spatial dimension plot | Clusters on tissue |
-| `SpatFeaturePlot()` | Spatial feature plot | Gene expression on tissue |
-
-## Working with Different Data Formats
-
-### Seurat Objects
-
-```r
-library(scplotter)
-library(Seurat)
-
-# Load Seurat object
-seurat_obj <- readRDS("seurat_object.rds")
-
-# Most scplotter functions work directly with Seurat objects
-CellDimPlot(seurat_obj, reduction = "umap", group.by = "seurat_clusters")
-
-# Feature plots
-FeatureStatPlot(seurat_obj, features = c("CD3D", "CD8A", "CD4"),
-                plot_type = "box")
-```
-
-### Giotto Objects
-
-```r
-library(scplotter)
-library(Giotto)
-
-# Load Giotto object
-giotto_obj <- loadGiottoObject("giotto_data")
-
-# Spatial plots
-SpatDimPlot(giotto_obj, reduction = "umap", group.by = "cluster")
-SpatFeaturePlot(giotto_obj, features = c("Gene1", "Gene2"))
-```
-
-### AnnData (.h5ad) Files
-
-```r
-library(scplotter)
-library(reticulate)
-
-# Load anndata file
-adata <- read_h5ad("data.h5ad")
-
-# Convert to Seurat or work directly
-seurat_obj <- ConvertToSeurat(adata)
-CellDimPlot(seurat_obj, reduction = "umap")
-```
-
-See `articles/Working_with_anndata_h5ad_files.html` for detailed workflow.
-
-## Clone Selectors (for TCR/BCR analysis)
-
-Helper functions to select clones based on various criteria:
-
-```r
-# Select top N clones
-top_clones <- top(tcr_data, n = 10)
-
-# Select clones with specific criteria
-selected <- sel(tcr_data, count > 5)
-
-# Unique clones
-unique_clones <- uniq(tcr_data)
-
-# Shared clones between samples
-shared_clones <- shared(tcr_data, samples = c("A", "B"))
-
-# Comparison operators
-gt(tcr_data, count, 10)    # greater than
-ge(tcr_data, count, 10)    # greater or equal
-lt(tcr_data, count, 10)    # less than
-le(tcr_data, count, 10)    # less or equal
-eq(tcr_data, count, 10)    # equal
-ne(tcr_data, count, 10)    # not equal
-
-# Logical operators
-and(gt(tcr_data, count, 5), lt(tcr_data, count, 100))
-or(eq(tcr_data, tissue, "blood"), eq(tcr_data, tissue, "tumor"))
-```
-
-## LLM-Assisted Visualization
-
-scplotter includes built-in LLM support for automatic plot generation:
-
-```r
-library(scplotter)
-library(tidyprompt)
-
-# Setup LLM provider
-provider <- tidyprompt::llm_provider_openai(
-    api_key = Sys.getenv("OPENAI_API_KEY")
-)
-
-# Create chat instance
-chat <- SCPlotterChat$new(provider = provider)
-
-# Ask for visualization
-chat$ask("Generate a UMAP plot colored by cell type for the ifnb_sub data")
-# Automatically identifies: CellDimPlot(ifnb_sub, group.by = "cell_type")
-
-# Iterate on visualization
-chat$ask("Make it a dot plot instead")
-chat$ask("Show only T cells and B cells")
-chat$ask("Add gene expression overlay for CD3D")
-```
-
-See `articles/Visualizing_data_with_LLMs.html` for complete workflow.
-
-## Publication-Quality Customization
-
-### General Plot Styling
-
-```r
-library(scplotter)
-library(ggplot2)
-
-# Set global theme
-theme_set(theme_minimal(base_size = 12))
-
-# Custom color palette
-custom_colors <- c("B cell" = "#1f77b4", "T cell" = "#ff7f0e", 
-                   "Monocyte" = "#2ca02c", "NK" = "#d62728")
-
-CellDimPlot(seurat_obj, group.by = "cell_type",
-            palette = custom_colors,
-            point_size = 2,
-            alpha = 0.7,
-            legend.title = "Cell Type",
-            title = "Single Cell Atlas")
-
-# Save publication quality
-ggsave("figure1.pdf", width = 8, height = 6, dpi = 300)
-```
-
-### Multi-Panel Figures
-
-```r
-library(patchwork)
-
-# Create multiple plots
-p1 <- CellDimPlot(obj, group.by = "cell_type")
-p2 <- CellStatPlot(obj, group.by = "cell_type", metrics = "nFeature_RNA")
-p3 <- FeatureStatPlot(obj, features = top_markers, plot_type = "heatmap")
-
-# Combine
-combined <- p1 + p2 + p3 + 
-            plot_layout(ncol = 2, heights = c(2, 1))
-
-ggsave("multi_panel_figure.pdf", combined, width = 12, height = 10)
-```
-
-## Built-in Datasets
-
-```r
-# Load example datasets
-data(ifnb_sub)        # Subsetted IFNB-stimulated PBMCs
-data(pancreas_sub)    # Mouse pancreas dataset
-data(cellphonedb_res) # CellPhoneDB results example
-
-# Explore dataset
-?ifnb_sub
-str(ifnb_sub)
-```
-
-## Common Workflows
-
-### Workflow 1: Complete scRNA-seq Analysis
-
-```r
-library(scplotter)
-library(Seurat)
-
-# 1. Load and QC
-seurat_obj <- readRDS("processed.rds")
-
-# 2. Dimensionality reduction
-CellDimPlot(seurat_obj, reduction = "umap", group.by = "seurat_clusters")
-
-# 3. QC metrics visualization
-CellStatPlot(seurat_obj, group.by = "seurat_clusters",
-             metrics = c("nFeature_RNA", "nCount_RNA", "percent.mt"))
-
-# 4. Marker gene visualization
-markers <- FindAllMarkers(seurat_obj)
-MarkersPlot(markers, top_n = 20, group = "0")
-
-# 5. Feature expression
-FeatureStatPlot(seurat_obj, features = c("CD3D", "CD14", "MS4A1"),
-                plot_type = "violin")
-
-# 6. Save
-ggsave("umap_clusters.pdf", width = 8, height = 6)
-```
-
-### Workflow 2: Spatial Analysis
-
-```r
-library(scplotter)
-library(Giotto)
-
-# 1. Load spatial data
-spatial_obj <- loadGiottoObject("visium_data")
-
-# 2. Spatial clustering
-SpatDimPlot(spatial_obj, group.by = "cluster", point_size = 1.5)
-
-# 3. Gene expression on tissue
-SpatFeaturePlot(spatial_obj, features = c("GFAP", "MBP", "NEUN"),
-                plot_type = "dot", spot_size = 2)
-
-# 4. Combined view
-p1 <- SpatDimPlot(spatial_obj)
-p2 <- SpatFeaturePlot(spatial_obj, features = "Gene1")
-p1 + p2
-```
-
-### Workflow 3: TCR Repertoire Analysis
-
-```r
-library(scplotter)
-library(scRepertoire)
-
-# 1. Load TCR data
-tcr_obj <- readRDS("tcr_data.rds")
-
-# 2. Clonal statistics
-ClonalStatPlot(tcr_obj, group.by = "sample")
-
-# 3. Top clones
-ClonalAbundancePlot(tcr_obj, top_n = 30)
-
-# 4. Diversity analysis
-ClonalDiversityPlot(tcr_obj, group.by = "condition",
-                    metric = "shannon")
-
-# 5. Clonal overlap
-ClonalOverlapPlot(tcr_obj, samples = c("tumor", "blood"))
-
-# 6. V gene usage
-ClonalGeneUsagePlot(tcr_obj, gene_type = "v", top_n = 15)
-```
-
-## Key Parameters Reference
-
-### CellDimPlot
-- `reduction`: "umap", "tsne", "pca"
-- `group.by`: Metadata column for coloring
-- `palette`: Custom color vector
-- `point_size`: Point size (default: 1)
-- `alpha`: Transparency (0-1)
-
-### CellStatPlot
-- `group.by`: Grouping variable
-- `metrics`: QC metrics to plot
-- `plot_type`: "box", "violin", "dot"
-
-### FeatureStatPlot
-- `features`: Gene names to plot
-- `plot_type`: "violin", "box", "dot", "heatmap"
-- `group.by`: Grouping variable
-
-### CCCPlot
-- `plot_type`: "dot", "heatmap", "circle"
-- `top_n`: Top N interactions to show
-- `ligand_target`, `receptor_target`: Specific interactions
-
-## Tips for Effective Visualization
-
-1. **Always start with CellDimPlot**: Get overview of cell types/clusters
-2. **Use CellStatPlot for QC**: Check data quality before interpretation
-3. **Choose appropriate plot types**:
-   - Violin plots for distribution comparison
-   - Dot plots for many genes/groups
-   - Heatmaps for patterns across groups
-4. **Customize colors**: Use consistent color schemes across figures
-5. **Use patchwork**: Combine related plots into multi-panel figures
-6. **LLM assistance**: Use SCPlotterChat for rapid iteration
-7. **Export high resolution**: Always use 300+ DPI for publication
+Outputs PDF plots to `output_dir`. A `colors.yaml` is auto-generated for consistent coloring across all plots.
+
+## BasicViz Plot Types Reference
+
+### UMAP (`type: "umap"`)
+
+Dimensionality reduction plot with:
+- Auto cluster labels (numeric ID + name) placed at centroids
+- Faceting via `facet_by` parameter
+- Raster rendering for >5000 cells (uses ggrastr if available)
+- Custom L-shaped axis indicators
+- Dynamic width: single panel = 8", faceted = 5" × n_facets
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `color_by` | Yes | `adata.obs` column for coloring |
+| `facet_by` | No | `adata.obs` column for faceting |
+| `palette` | No | "elegant" (default), "npg", "jco", "igv", or RColorBrewer name |
+| `point_size` | No | Default 0.3 |
+| `title` | No | Plot title |
+
+Labels auto-appear when `color_by` contains "cluster", "annot", "type", or "leiden" (case-insensitive).
+
+### Composition (`type: "proportion"`)
+
+Stacked bar charts showing cell type proportions:
+- `position: "fill"` — relative proportions with % labels (shown for bars ≥5%)
+- `position: "stack"` — absolute counts
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `group_by` | Yes | X-axis grouping column |
+| `fill_by` | Yes | Bar fill column |
+| `position` | No | "fill" (default) or "stack" |
+| `title` | No | Plot title |
+
+### DotPlot (`type: "dotplot"`)
+
+Marker gene expression dotplot:
+- Z-score color gradient (RdBu, capped at ±2.5)
+- Dot size = % cells expressing per group
+- Facet strips colored by cluster identity (from `colors.yaml`)
+- Gene groups defined in `dotplot.markers` config section
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `group_by` | Yes | Y-axis group column (must match `dotplot.markers` keys) |
+| `title` | No | Plot title |
+
+### Feature (`type: "feature"`)
+
+Multi-page PDF, one page per cluster from `dotplot.markers`:
+- Gene expression overlaid on UMAP (viridis magma color scale)
+- Auto grid layout within each page
+- Genes drawn from `dotplot.markers` config section
+
+### River (`type: "river"`)
+
+Alluvial plot showing composition flow across conditions:
+- Proportional flow between groups
+- Stratum labels on each axis
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `group_by` | Yes | X-axis (flow direction) |
+| `fill_by` | Yes | Stratum fill column |
+| `title` | No | Plot title |
+
+## Elegant Theme System
+
+All BasicViz plots use a unified "Elegant Muted" publication theme:
+- L-shaped axes (no box borders), no gridlines
+- Muted, high-contrast 24-color palette
+- White backgrounds, clean legend positioning
+- Consistent typography (bold titles, proportional sizing)
+
+For theme customization (fonts, palettes, color mapping details), see `references/theme-and-colors.md`.
 
 ## Troubleshooting
 
-### "Object not compatible with scplotter"
-- Ensure object is Seurat, Giotto, or compatible class
-- Check that required slots are populated (reductions, metadata)
-
-### "No reduction found"
-- Run dimensionality reduction first: `RunUMAP()`, `RunTSNE()`
-- Specify correct reduction name: `reduction = "umap"`
-
-### "Color palette mismatch"
-- Provide custom palette matching number of groups
-- Use `unique()` to count group levels
-
-### Spatial data not displaying
-- Verify spatial coordinates are present in object
-- Check `SpatDimPlot` vs `CellDimPlot` for spatial data
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `numpy.core.multiarray failed to import` | numpy >=2.0 incompatible with reticulate | Run `setup_env.sh` or set `RETICULATE_PYTHON` to Python 3.8–3.10 with numpy <2.0 |
+| `X_umap not found in .obsm` | No UMAP coordinates in object | Run UMAP in Python first: `sc.tl.umap(adata)` |
+| `No valid genes found` | Gene names in config don't match `adata.var_names` | Check case sensitivity; use exact values from `adata.var_names` |
+| `Missing colors for: ...` | New categories detected after color generation | Re-run pipeline; auto-generates missing colors |
+| Empty or corrupt PDF | reticulate Python path mismatch | Explicitly set `RETICULATE_PYTHON` before running |
+| Facet labels missing | `facet_by` column has non-categorical values | Convert to factor in Python: `adata.obs[col] = adata.obs[col].astype(str)` |
 
 ## Additional Resources
 
-- **Official documentation**: https://pwwang.github.io/scplotter/
-- **GitHub repository**: https://github.com/pwwang/scplotter
-- **plotthis (core)**: https://github.com/pwwang/plotthis
-- **Seurat**: https://satijalab.org/seurat/
-- **Giotto**: https://drieslab.github.io/Giotto_website/
-- **scRepertoire**: https://github.com/BorchLab/scRepertoire
-- **LIANA**: https://github.com/saezlab/liana-py
+### Bundled Scripts (in `scripts/`)
 
-## Articles and Vignettes
+| File | Purpose |
+|------|---------|
+| `main.R` | Pipeline orchestrator; reads `config.yaml` and dispatches plot scripts |
+| `setup_env.sh` | Conda environment setup (Python 3.8, numpy<1.25) |
+| `utils.R` | Shared utilities: `theme_elegant()`, `get_palette_values()`, `scale_color_custom()`, `setup_python()` |
+| `generate_colors.R` | Auto-generates consistent `colors.yaml` from data |
+| `plot_umap.R` | UMAP with labels, facets, raster support |
+| `plot_proportions.R` | Stacked bar composition plots |
+| `plot_dotplot.R` | Marker dotplot with colored facet strips |
+| `plot_feature.R` | Multi-page feature expression on UMAP |
+| `plot_river.R` | Alluvial river composition plots |
 
-- **Visualizing data with LLMs**: `articles/Visualizing_data_with_LLMs.html`
-- **Working with anndata files**: `articles/Working_with_anndata_h5ad_files.html`
-- **Spatial data guide**: `articles/Knowing_your_spatial_data_and_visualization.html`
+### Reference Files
 
-### Spatial Data Examples
+- **`references/scplotter-api.md`** — Complete scplotter function reference for TCR/BCR repertoire, spatial transcriptomics, cell-cell communication, and LLM-assisted visualization
+- **`references/theme-and-colors.md`** — Elegant theme customization, palette options, and color management system details
 
-**Seurat-based:**
-- 10x Visium: `articles/Seurat_10x_Visium.html`
-- VisiumHD: `articles/Seurat_10x_VisiumHD.html`
-- Xenium: `articles/Seurat_Xenium.html`
-- Nanostring CosMx: `articles/Seurat_Nanostring_CosMx.html`
-- SlideSeq: `articles/Seurat_SlideSeq.html`
+### Assets
 
-**Giotto-based:**
-- Visium: `articles/Giotto_Visium.html`
-- Xenium: `articles/Giotto_Xenium.html`
-- CODEX: `articles/Giotto_CODEX.html`
-- Vizgen: `articles/Giotto_vizgen.html`
-- seqFISH: `articles/Giotto_seqFISH.html`
+- **`assets/config_template.yaml`** — Starter configuration template for the BasicViz pipeline
